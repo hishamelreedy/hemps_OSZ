@@ -21,3 +21,5 @@ app_backup/*
 _backup_before_faithful_baseline_2026-10-02/*
 simulation_data/*
 docs/*
+slides_status/*
+slides/*
