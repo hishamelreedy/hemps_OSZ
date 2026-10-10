@@ -13,12 +13,26 @@
 //------------------------------------------------------------------------------------------------
 
 #include "pe.h"
-
+#include "../agent_debug_log.h"
 
 void pe::mem_mapped_registers(){
 	
 	sc_uint <32 > l_cpu_mem_address_reg = cpu_mem_address_reg.read();
 	sc_uint<NPORT > l_ap_mask;
+	/* ACCEL decode uses address_reg (same timing as IRQ/DMA), with page strip. */
+	sc_uint<32> accel_nominal_reg =
+		accel_bus_to_nominal(l_cpu_mem_address_reg, current_page.read());
+	// #region agent log
+	if (accel_nominal_reg >= ACCEL_CTRL && accel_nominal_reg <= ACCEL_DIMS1
+	    && cpu_mem_write_byte_enable_reg.read() == 0) {
+		agent_debug_log("H-A", "pe.cpp:mem_mapped_registers", "accel_reg_load",
+			(unsigned int)l_cpu_mem_address_reg,
+			(unsigned int)accel_nominal_reg,
+			(unsigned int)accel_mem_hit.read(),
+			(unsigned int)accel_mem_rdata.read(),
+			(unsigned int)current_page.read());
+	}
+	// #endregion
 
 	if(l_cpu_mem_address_reg.range(30,28 ) == 1){
 
@@ -111,7 +125,16 @@ void pe::mem_mapped_registers(){
 				cpu_mem_data_read.write(dmni_timeout_ni.read());
 			break;
 			default:
-				cpu_mem_data_read.write(data_read_ram.read());
+				/* Paged ACCEL MMIO: hit comes from tensor_accel on address_reg. */
+				if ((accel_nominal_reg >= ACCEL_CTRL &&
+				     accel_nominal_reg <= ACCEL_DIMS1) ||
+				    accel_mem_hit.read()) {
+					if (accel_mem_hit.read())
+						cpu_mem_data_read.write(accel_mem_rdata.read());
+					else
+						cpu_mem_data_read.write(0);
+				} else
+					cpu_mem_data_read.write(data_read_ram.read());
 			break;
 		}
 	}
@@ -137,7 +160,7 @@ void pe::comb_assignments(){
 	addr_a.write(new_mem_address.range(31, 2));
 	addr_b.write(dmni_mem_address.read()(31,2));
 	
-	cpu_mem_pause.write(cpu_repo_acess.read());
+	cpu_mem_pause.write(cpu_repo_acess.read() || accel_pause.read());
 	irq.write((((irq_status.read() & irq_mask_reg.read()) != 0x00)) ? 1  : 0 );
 	cpu_set_size.write((((cpu_mem_address_reg.read() == DMA_SIZE) && (write_enable.read() == 1))) ? 1  : 0 );
 	cpu_set_address.write((((cpu_mem_address_reg.read() == DMA_ADDR) && (write_enable.read() == 1))) ? 1  : 0 );
@@ -168,6 +191,7 @@ void pe::comb_assignments(){
 	write_enable.write(((cpu_mem_write_byte_enable_reg.read() != 0)) ? 1  : 0 );
 	cpu_enable_ram.write(((cpu_mem_address.read()(30,28 ) == 0)) ? 1  : 0 );
 	dmni_enable_internal_ram.write(((dmni_mem_address.read()(30,28 ) == 0)) ? 1  : 0 );
+
 	end_sim_reg.write((((cpu_mem_address_reg.read() == END_SIM) && (write_enable.read() == 1))) ? 0x00000000 : 0x00000001);	
 
 
@@ -203,6 +227,7 @@ void pe::sequential_attr(){
 		slack_update_timer.write(0);
 		app_reg.write(0);
 		apThreshold.write(0);
+		tensor_unit->reset_regs();
 	} else {
 
 		if(cpu_mem_pause.read() == 0) {
@@ -243,6 +268,28 @@ void pe::sequential_attr(){
 			slack_update_timer.write(slack_update_timer.read() + 1);
 		}
 		//*********************************************************************
+
+		/* ACCEL write: same pattern as IRQ/PENDING — write_enable + *_reg. */
+		if (write_enable.read() == 1) {
+			sc_uint<32> accel_nominal_addr =
+				accel_bus_to_nominal(cpu_mem_address_reg.read(), current_page.read());
+			if (accel_nominal_addr >= ACCEL_CTRL &&
+			    accel_nominal_addr <= ACCEL_DIMS1) {
+				sc_uint<32> accel_wdata = cpu_mem_data_write_reg.read();
+				// #region agent log
+				agent_debug_log("H-C", "pe.cpp:sequential_attr", "accel_write",
+					(unsigned int)cpu_mem_address_reg.read(),
+					(unsigned int)accel_wdata,
+					(unsigned int)accel_nominal_addr,
+					0u,
+					(unsigned int)current_page.read());
+				// #endregion
+				tensor_unit->service_mmio_write(
+					accel_nominal_addr,
+					accel_wdata
+				);
+			}
+		}
 
 		// //************** simluation-time debug implementation *******************
 		// if (cpu_mem_address_reg.read() == DEBUG && write_enable.read() == 1){
@@ -343,10 +390,10 @@ void pe::sequential_attr(){
 			time_slice.write(cpu_mem_data_write_reg.read());
   		}
 
-		if ((cpu_mem_address_reg.read() == TIMEOUT_REG_ADDR) and (write_enable.read()==1) ) {
+  		if ((cpu_mem_address_reg.read() == TIMEOUT_REG_ADDR) and (write_enable.read()==1) ) {
 			timeout_cont.write(cpu_mem_data_write_reg.read());
   		}
-  		
+
   		tick_counter.write((tick_counter.read() + 1) );
 
 	}
@@ -799,6 +846,14 @@ void pe::seek_receive(){
 					break;
 					case 0x33:
 						cout << "REPORT_SUSPICIOUS_PATH";
+						int_seek.write(1);
+					break;
+					case 0x36:
+						cout << "NILES_IC_FAULT_BROADCAST";
+						int_seek.write(1);
+					break;
+					case 0x37:
+						cout << "NILES_HEARTBEAT";
 						int_seek.write(1);
 					break;
 					default:
