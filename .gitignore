@@ -21,6 +21,7 @@ app_backup/*
 _backup_before_faithful_baseline_2026-10-02/*
 simulation_data/*
 docs/*
+docs/*/*
 slides_status/*
 slides/*
 tools/data/t10k-images-idx3-ubyte.gz
@@ -28,3 +29,5 @@ tools/data/t10k-labels-idx1-ubyte.gz
 tools/data/train-images-idx3-ubyte.gz
 tools/data/train-labels-idx1-ubyte.gz
 paper1/*
+work/*
+Claude\ Outputs/*
