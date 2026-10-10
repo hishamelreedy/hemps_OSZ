@@ -74,6 +74,8 @@
 #define RESET_HERMES_PORT_SERVICE		49  //0x31
 #define INIT_ROUTER_RESET				50  //0x32
 #define REPORT_SUSPICIOUS_PATH			51  //0x33
+#define NILES_IC_FAULT_BROADCAST		54  //0x36
+#define NILES_HEARTBEAT					55  //0x37
 
 
 #define	IRQ_SEEK						0x80
