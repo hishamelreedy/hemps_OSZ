@@ -1,0 +1,168 @@
+COR  =\033[0;32m
+NC   =\033[0m
+
+LIB=work
+
+ifdef HEMPS_DEBUG
+SC_DEBUG_FLAGS = -DHEMPS_DEBUG=1
+else
+SC_DEBUG_FLAGS =
+endif
+
+SC_C = @ sccom -nologo -work $(LIB) -g -Wno-write-strings -DDUPLICATED_CHANNEL $(SC_DEBUG_FLAGS)
+
+VHD_C = @ vcom -quiet -2008 -work $(LIB)
+
+#SystemC files
+TOP 					=hemps test_bench
+PE	 					=pe
+TENSOR_ACCEL_SC			=tensor_accel
+DMNI 					=dmni plasma_sender
+MEMORY 					=ram
+PROCESSOR 				=mlite_cpu
+ROUTER_SC 				=RouterCCwrapped2
+SEEK_SC  				=router_seek_wrapped2
+FIFO_PDN_SC 			=fifo_pdn
+FAIL_WRAPPER_MODULE_SC 	=fail_wrapper_module
+INJECTOR_SC 			=injector
+SNIP_SC			 		=io_peripheral
+SABOTAGE_SC				=sabotage
+
+#vhdl files
+HEMPS_PKG	=hemps_pkg
+STAND		=standards
+STAND_SNIP	=snip_pkg
+SEEK_VHD 	=seek_pkg logging router_seek seek_local_controller
+
+ROUTER_VHD 	=Hermes_buffer Hermes_crossbar Hermes_switchcontrol_SR mux_control RouterCC_SR Access_Point RouterCC_AP router_ht router_ht_wrapper
+SNIP_VHDL	=snip_lfsr snip_key_generator snip_packet_handler snip_packet_builder snip_application_table snip_io_buffer snip_warning_manager peripheral snip
+
+TOP_SRC	    			= $(addprefix sc/, 									$(TOP:=.cpp)  $(TOP:=.h) 			)
+PE_SRC					= $(addprefix sc/pe/, 								$(PE:=.cpp) $(PE:=.h)  				)
+TENSOR_ACCEL_SRC		= $(addprefix sc/pe/tensor_accel/, 					$(TENSOR_ACCEL_SC:=.cpp) $(TENSOR_ACCEL_SC:=.h)	)
+DMNI_SRC				= $(addprefix sc/pe/dmni/, 							$(DMNI:=.cpp) $(DMNI:=.h)			)
+MEMORY_SRC				= $(addprefix sc/pe/memory/,						$(MEMORY:=.cpp) $(MEMORY:=.h)		)
+PROCESSOR_SRC			= $(addprefix sc/pe/processor/plasma/, 				$(PROCESSOR:=.cpp) $(PROCESSOR:=.h)	)
+ROUTER_SC_SRC			= $(addprefix sc/pe/router/, 						$(ROUTER_SC:=.cpp) 					)
+SEEK_SC_SRC				= $(addprefix sc/pe/router/seek/, 					$(SEEK_SC:=.cpp) $(SEEK_SC:=.h)		)
+FIFO_PDN_SRC			= $(addprefix sc/pe/fifo_pdn/, 						$(FIFO_PDN_SC:=.cpp) $(FIFO_PDN_SC:=.h)		)
+FAIL_WRAPPER_MODULE_SRC	= $(addprefix sc/pe/fail_wrapper_module/, 			$(FAIL_WRAPPER_MODULE_SC:=.cpp) $(FAIL_WRAPPER_MODULE_SC:=.h)	)
+SNIP_SC_SCR				= $(addprefix sc/peripherals/IO_peripheral/,		$(SNIP_SC:=.h)						)
+INJECTOR_SRC			= $(addprefix sc/peripherals/IO_peripheral/, 	$(INJECTOR_SC:=.cpp) $(INJECTOR_SC:=.h)		)
+SABOTAGE_SRC			= $(addprefix sc/peripherals/IO_peripheral/, 	$(SABOTAGE_SC:=.cpp) $(SABOTAGE_SC:=.h)		)
+
+HEMPS_PKG_SRC	= $(addprefix ../include/, 				$(HEMPS_PKG:=.vhd) 					)
+STAND_SRC	    = $(addprefix vhdl/, 					$(STAND:=.vhd) 						)
+STAND_SNIP_SRC	= $(addprefix vhdl/snip/,				$(STAND_SNIP:=.vhd)					)
+ROUTER_VHD_SRC	= $(addprefix vhdl/pe/router/, 			$(ROUTER_VHD:=.vhd)					)
+SEEK_VHD_SRC	= $(addprefix vhdl/pe/router/seek/, 	$(SEEK_VHD:=.vhd)					)
+SNIP_VHDL_SRC	= $(addprefix vhdl/snip/,				$(SNIP_VHDL:=.vhd)					)
+
+TGT_SCCOM_PATH = $(LIB)/_sc/win64/
+
+TOP_TGT 				=$(addprefix $(TGT_SCCOM_PATH), $(TOP:=.o))
+PE_TGT	 				=$(addprefix $(TGT_SCCOM_PATH), $(PE:=.o))
+TENSOR_ACCEL_TGT		=$(addprefix $(TGT_SCCOM_PATH), $(TENSOR_ACCEL_SC:=.o))
+DMNI_TGT 				=$(addprefix $(TGT_SCCOM_PATH), $(DMNI:=.o))
+MEMORY_TGT 				=$(addprefix $(TGT_SCCOM_PATH), $(MEMORY:=.o))
+PROCESSOR_TGT 			=$(addprefix $(TGT_SCCOM_PATH), $(PROCESSOR:=.o))
+ROUTER_TGT	 			=$(addprefix $(TGT_SCCOM_PATH), $(ROUTER_SC:=.o))
+SEEK_TGT				=$(addprefix $(TGT_SCCOM_PATH), $(SEEK_SC:=.o))
+SNIP_TGT				=$(addprefix $(TGT_SCCOM_PATH), $(SNIP_SC:=.o))
+FIFO_PDN_TGT			=$(addprefix $(TGT_SCCOM_PATH), $(FIFO_PDN_SC:=.o))
+FAIL_WRAPPER_MODULE_TGT	=$(addprefix $(TGT_SCCOM_PATH), $(FAIL_WRAPPER_MODULE_SC:=.o))
+INJECTOR_TGT			=$(addprefix $(TGT_SCCOM_PATH), $(INJECTOR_SC:=.o))
+SABOTAGE_TGT			=$(addprefix $(TGT_SCCOM_PATH), $(SABOTAGE_SC:=.o))
+
+default: lib $(HEMPS_PKG) $(STAND) $(ROUTER_VHD) $(SEEK_VHD) $(STAND_SNIP) $(SNIP_VHDL) $(ROUTER_TGT) $(SEEK_TGT) $(FIFO_PDN_TGT) $(FAIL_WRAPPER_MODULE_TGT) $(PROCESSOR_TGT) $(DMNI_TGT) $(MEMORY_TGT) $(TENSOR_ACCEL_TGT) $(PE_TGT) $(INJECTOR_TGT) $(SABOTAGE_TGT) $(TOP_TGT)
+	@sccom -link
+
+lib:
+	@vlib $(LIB)
+	@vmap $(LIB) $(LIB)
+
+$(HEMPS_PKG): $(HEMPS_PKG_SRC)
+	@printf "${COR}Compiling VHDL source: %s ...${NC}\n" "$(dir $<)$@.vhd"
+	$(VHD_C) $(dir $<)$@.vhd
+
+$(STAND): $(STAND_SRC)
+	@printf "${COR}Compiling VHDL source: %s ...${NC}\n" "$(dir $<)$@.vhd"
+	$(VHD_C) $(dir $<)$@.vhd
+
+$(STAND_SNIP): $(STAND_SNIP_SRC)
+	@printf "${COR}Compiling VHDL source: %s ...${NC}\n" "$(dir $<)$@.vhd"
+	$(VHD_C) $(dir $<)$@.vhd
+
+$(TOP_TGT): $(TOP_SRC)
+	@printf "${COR}Compiling SystemC source: %s ...${NC}\n" "$(dir $<)$(notdir $*).cpp"
+	$(SC_C) $(dir $<)$(notdir $*).cpp
+
+$(PE_TGT): $(PE_SRC)
+	@printf "${COR}Compiling SystemC source: %s ...${NC}\n" "$(dir $<)$(notdir $*).cpp"
+	$(SC_C) $(dir $<)$(notdir $*).cpp
+
+$(TENSOR_ACCEL_TGT): $(TENSOR_ACCEL_SRC)
+	@printf "${COR}Compiling SystemC source: %s ...${NC}\n" "$(dir $<)$(notdir $*).cpp"
+	$(SC_C) $(dir $<)$(notdir $*).cpp
+
+$(DMNI_TGT): $(DMNI_SRC)
+	@printf "${COR}Compiling SystemC source: %s ...${NC}\n" "$(dir $<)$(notdir $*).cpp"
+	$(SC_C) $(dir $<)$(notdir $*).cpp
+
+$(MEMORY_TGT): $(MEMORY_SRC)
+	@printf "${COR}Compiling SystemC source: %s ...${NC}\n" "$(dir $<)$(notdir $*).cpp"
+	$(SC_C) $(dir $<)$(notdir $*).cpp
+
+$(PROCESSOR_TGT): $(PROCESSOR_SRC)
+	@printf "${COR}Compiling SystemC source: %s ...${NC}\n" "$(dir $<)$(notdir $*).cpp"
+	$(SC_C) $(dir $<)$(notdir $*).cpp
+
+$(ROUTER_TGT): $(ROUTER_SC_SRC)
+	@printf "${COR}Compiling SystemC source: %s ...${NC}\n" "$(dir $<)$(notdir $*).cpp"
+	$(SC_C) $(dir $<)$(notdir $*).cpp
+
+$(SEEK_TGT): $(SEEK_SC_SRC)
+	@printf "${COR}Compiling SystemC source: %s ...${NC}\n" "$(dir $<)$(notdir $*).cpp"
+	$(SC_C) $(dir $<)$(notdir $*).cpp
+
+$(FIFO_PDN_TGT): $(FIFO_PDN_SRC)
+	@printf "${COR}Compiling SystemC source: %s ...${NC}\n" "$(dir $<)$(notdir $*).cpp"
+	$(SC_C) $(dir $<)$(notdir $*).cpp
+
+$(FAIL_WRAPPER_MODULE_TGT): $(FAIL_WRAPPER_MODULE_SRC)
+	@printf "${COR}Compiling SystemC source: %s ...${NC}\n" "$(dir $<)$(notdir $*).cpp"
+	$(SC_C) $(dir $<)$(notdir $*).cpp
+
+$(INJECTOR_TGT): $(INJECTOR_SRC)
+	@printf "${COR}Compiling SystemC source: %s ...${NC}\n" "$(dir $<)$(notdir $*).cpp"
+	$(SC_C) $(dir $<)$(notdir $*).cpp
+
+$(SABOTAGE_TGT): $(SABOTAGE_SRC)
+	@printf "${COR}Compiling SystemC source: %s ...${NC}\n" "$(dir $<)$(notdir $*).cpp"
+	$(SC_C) $(dir $<)$(notdir $*).cpp
+
+$(ROUTER_VHD): $(ROUTER_VHD_SRC)
+	@printf "${COR}Compiling VHDL source: %s ...${NC}\n" "$(dir $<)$@.vhd"
+	$(VHD_C) $(dir $<)$@.vhd
+
+$(SEEK_VHD): $(SEEK_VHD_SRC)
+	@printf "${COR}Compiling VHDL source: %s ...${NC}\n" "$(dir $<)$@.vhd"
+	$(VHD_C) $(dir $<)$@.vhd
+
+$(SNIP_VHDL): $(SNIP_VHDL_SRC)
+	@printf "${COR}Compiling VHDL source: %s ...${NC}\n" "$(dir $<)$@.vhd"
+	$(VHD_C) $(dir $<)$@.vhd
+
+clean:
+	@printf "Cleaning up\n"
+	@rm -f *~
+	@rm -f *.o
+	@rm -f *.exe
+	@rm -f HeMPS
+	@rm -f Injector*
+	@rm -f ../modelsim.ini
+	@rm -rf ../work
+	@rm -rf work
+	@rm -rf ../transcript
+	@rm -rf ../log/*
+	@rm -rf ../debug/*.txt

@@ -9,6 +9,7 @@ HEMPS_TGT=HeMPS
 #SystemC files
 TOP 		=hemps test_bench
 PE	 		=pe
+TENSOR_ACCEL_SC	=tensor_accel
 DMNI 		=dmni
 MEMORY 		=ram
 PROCESSOR 	=mlite_cpu
@@ -16,6 +17,7 @@ ROUTER	 	=queue switchcontrol router_cc
 
 TOP_SRC	    	= $(addprefix sc/, 						$(TOP:=.cpp)  $(TOP:=.h) 			)
 PE_SRC			= $(addprefix sc/pe/, 					$(PE:=.cpp) $(PE:=.h)  				)
+TENSOR_ACCEL_SRC	= $(addprefix sc/pe/tensor_accel/, 			$(TENSOR_ACCEL_SC:=.cpp) $(TENSOR_ACCEL_SC:=.h)	)
 DMNI_SRC		= $(addprefix sc/pe/dmni/, 				$(DMNI:=.cpp) $(DMNI:=.h)			)
 MEMORY_SRC		= $(addprefix sc/pe/memory/,			$(MEMORY:=.cpp) $(MEMORY:=.h)		) 
 PROCESSOR_SRC	= $(addprefix sc/pe/processor/plasma/, 	$(PROCESSOR:=.cpp) $(PROCESSOR:=.h)	)
@@ -23,6 +25,7 @@ ROUTER_SRC		= $(addprefix sc/pe/router/, 			$(ROUTER:=.cpp) $(ROUTER:=.h)		)
 
 TOP_TGT 		=$(TOP:=.o)
 PE_TGT	 		=$(PE:=.o)
+TENSOR_ACCEL_TGT	=$(TENSOR_ACCEL_SC:=.o)
 DMNI_TGT 		=$(DMNI:=.o)
 MEMORY_TGT 		=$(MEMORY:=.o)
 PROCESSOR_TGT 	=$(PROCESSOR:=.o)
@@ -31,7 +34,7 @@ ROUTER_TGT	 	=$(ROUTER:=.o)
 all: $(HEMPS_TGT)
 	@cp HeMPS ../
 
-$(HEMPS_TGT): $(ROUTER_TGT) $(PROCESSOR_TGT) $(DMNI_TGT) $(MEMORY_TGT) $(PE_TGT) $(TOP_TGT)
+$(HEMPS_TGT): $(ROUTER_TGT) $(PROCESSOR_TGT) $(DMNI_TGT) $(MEMORY_TGT) $(TENSOR_ACCEL_TGT) $(PE_TGT) $(TOP_TGT)
 	@printf "${COR}Generating %s ...${NC}\n" "$@"
 	g++ -I./ -o $@ $^ -L. -Linc/. -lsystemc
 	
@@ -42,6 +45,10 @@ $(TOP_TGT): $(TOP_SRC)
 $(PE_TGT): $(PE_SRC)
 	@printf "${COR}Compiling SystemC source: %s ...${NC}\n" "$(dir $<)$*.cpp"
 	$(SC_C) $(dir $<)$*.cpp
+
+$(TENSOR_ACCEL_TGT): $(TENSOR_ACCEL_SRC)
+	@printf "${COR}Compiling SystemC source: %s ...${NC}\n" "$(dir $<)tensor_accel.cpp"
+	$(SC_C) $(dir $<)tensor_accel.cpp
 
 $(DMNI_TGT): $(DMNI_SRC)
 	@printf "${COR}Compiling SystemC source: %s ...${NC}\n" "$(dir $<)$*.cpp"

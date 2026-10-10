@@ -21,11 +21,11 @@ def main():
 
     generate_hw_pkg( yaml_r )
     
-    #compile_hw
-    exit_status = os.system("cd hardware/; make")
-    
-    if exit_status != 0:
-        sys.exit("\nError compiling hardware source code\n");
+    #compile_hw (skip when preparing a Windows Questa build from WSL)
+    if os.getenv("HEMPS_HW_SKIP_MAKE") != "1":
+        exit_status = os.system("cd hardware/; make")
+        if exit_status != 0:
+            sys.exit("\nError compiling hardware source code\n");
 
 
 
@@ -522,7 +522,6 @@ def generate_to_systemc(is_master_list, yaml_r):
             open_ports_vector[index] = 1
         if len(port) > 5: 
             index = port[6]*x_mpsoc_dim + port[5]
-            io_number=io_number + 1
             if port[7] == "N":
                 open_ports_vector[index] = 2
             if port[7] == "S":
@@ -532,7 +531,7 @@ def generate_to_systemc(is_master_list, yaml_r):
             if port[7] == "W":
                 open_ports_vector[index] = 1
 
-
+    io_number = sum(1 for v in open_ports_vector if v != 5)
 
     open_ports_string = ""
     for i in range(0,x_mpsoc_dim*y_mpsoc_dim):
@@ -644,7 +643,6 @@ def generate_to_vhdl(is_master_list, yaml_r):
             open_ports_vector[index] = "wes"
         if len(port) > 5: 
             index = port[6]*x_mpsoc_dim + port[5]
-            io_number=io_number + 1
             if port[7] == "N":
                 open_ports_vector[index] = "nor"
             if port[7] == "S":
@@ -652,7 +650,9 @@ def generate_to_vhdl(is_master_list, yaml_r):
             if port[7] == "E":
                 open_ports_vector[index] = "eas"
             if port[7] == "W":
-                open_ports_vector[index] = "wes"    
+                open_ports_vector[index] = "wes"
+
+    io_number = sum(1 for v in open_ports_vector if v != "gnd")
 #
 #    if open_ports[0][3] == "N":
 #        loader_addr = 0xC0000000

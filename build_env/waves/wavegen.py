@@ -165,6 +165,26 @@ for pe in range(0,max_pe):
 	print (dmni_dividers_pfx +"DMNI_Send")
 	print (dmni_signals_pfx+"DMNI_Send")
 
+	# tensor accelerator (SystemC tensor_unit in hybrid PE)
+	tensor_accel_pfx = "add wave -noupdate -group {%s %dx%d - %d} -group tensor_accel /test_bench/HeMPS/%s%dx%d/tensor_unit/" % (pe_type_str, posX, posY, pe, pe_type_str, posX, posY)
+	tensor_accel_sds = [
+		"clock", "reset", "pause_cpu", "mem_hit",
+		"mem_address", "mem_read_address", "mem_write_address", "mem_write_data",
+		"mem_write", "mem_rdata",
+		"reg_in_addr", "reg_out_addr", "reg_w_addr",
+		"reg_in_dim", "reg_out_dim", "reg_fc_relu",
+		"reg_dbg_op", "reg_dbg_runs", "reg_dbg_in0", "reg_dbg_w0",
+		"reg_dbg_out0", "reg_dbg_in_sum", "reg_dbg_out_max", "reg_dbg_status",
+		"busy", "done", "current_page", "tick_counter"
+	]
+	for it in map(lambda sd: tensor_accel_pfx + sd, tensor_accel_sds):
+		print (it)
+
+	tensor_pe_pfx = "add wave -noupdate -group {%s %dx%d - %d} -group tensor_accel /test_bench/HeMPS/%s%dx%d/" % (pe_type_str, posX, posY, pe, pe_type_str, posX, posY)
+	tensor_pe_sds = ["accel_mem_hit", "accel_mem_rdata", "accel_pause", "cpu_mem_pause", "cpu_mem_address", "cpu_mem_address_reg", "write_enable", "cpu_mem_write_byte_enable"]
+	for it in map(lambda sd: tensor_pe_pfx + sd, tensor_pe_sds):
+		print (it)
+
 	# switch control signals
 	router_pfx = "add wave -noupdate -group {%s %dx%d - %d} -group {switch control} /test_bench/HeMPS/%s%dx%d/RouterCCwrapped/router_ht_wrapper/Router/coreRouter/SwitchControl_SR_write/" % 					(pe_type_str, posX, posY, pe, pe_type_str, posX, posY)
 	router_sds = ["EA","ask","ack_routing","address","clock","data_in_header","data_in_header_fixed","dirx","diry","enable_shift", "free_port","header","header_fixed","lx","next_flit","prox","req_routing" ,"try_again"]
@@ -578,7 +598,7 @@ for snip_idx in range(0, snip_number):
 
 	### States
 
-print ("TreeUpdate [SetDesecurityTree]\n\
+print ("TreeUpdate [SetDefaultTree]\n\
 WaveRestoreCursors {{Cursor 1} {10 ps} 0}\n\
 quietly wave cursor active 1\n\
 configure wave -namecolwidth 242\n\

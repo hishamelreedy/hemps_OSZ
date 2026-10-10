@@ -157,7 +157,7 @@ def get_open_ports(yaml_reader):
     return open_port_list
 
 def get_hts(yaml_reader):
-    ht_list = yaml_reader["hw"]["ht"]
+    ht_list = yaml_reader["hw"].get("ht", [])
 
     router_list = []
 

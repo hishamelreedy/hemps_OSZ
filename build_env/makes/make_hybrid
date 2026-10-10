@@ -3,15 +3,23 @@ NC   =\033[0m
 
 LIB=work
 
+# Enable HW debug logs: HEMPS_DEBUG=1 make   (adds -DHEMPS_DEBUG=1 to sccom)
+ifdef HEMPS_DEBUG
+SC_DEBUG_FLAGS = -DHEMPS_DEBUG=1
+else
+SC_DEBUG_FLAGS =
+endif
+
 #Se for rodar na kriti tirar o -B/usr/bin das linhas onde tem SC_C = @ sccom
 #SC_C = @ sccom -nologo -work $(LIB) -fpermissive -g -Wno-write-strings -DDUPLICATED_CHANNEL -DWARD_MODULE -B/usr/bin
-SC_C = @ sccom -nologo -work $(LIB) -g -Wno-write-strings -DDUPLICATED_CHANNEL -B/usr/bin
+SC_C = @ sccom -nologo -work $(LIB) -g -Wno-write-strings -DDUPLICATED_CHANNEL $(SC_DEBUG_FLAGS) -B/usr/bin
 
 VHD_C = @ vcom -quiet -2008 -work $(LIB) 
 
 #SystemC files
 TOP 					=hemps test_bench
 PE	 					=pe
+TENSOR_ACCEL_SC			=tensor_accel
 DMNI 					=dmni plasma_sender
 MEMORY 					=ram
 PROCESSOR 				=mlite_cpu
@@ -35,6 +43,7 @@ SNIP_VHDL	=snip_lfsr snip_key_generator snip_packet_handler snip_packet_builder 
 
 TOP_SRC	    			= $(addprefix sc/, 									$(TOP:=.cpp)  $(TOP:=.h) 			)
 PE_SRC					= $(addprefix sc/pe/, 								$(PE:=.cpp) $(PE:=.h)  				)
+TENSOR_ACCEL_SRC		= $(addprefix sc/pe/tensor_accel/, 					$(TENSOR_ACCEL_SC:=.cpp) $(TENSOR_ACCEL_SC:=.h)	)
 DMNI_SRC				= $(addprefix sc/pe/dmni/, 							$(DMNI:=.cpp) $(DMNI:=.h)			)
 MEMORY_SRC				= $(addprefix sc/pe/memory/,						$(MEMORY:=.cpp) $(MEMORY:=.h)		) 
 PROCESSOR_SRC			= $(addprefix sc/pe/processor/plasma/, 				$(PROCESSOR:=.cpp) $(PROCESSOR:=.h)	)
@@ -60,6 +69,7 @@ SNIP_VHDL_SRC	= $(addprefix vhdl/snip/,				$(SNIP_VHDL:=.vhd)					)
 
 TOP_TGT 				=$(addprefix $(TGT_SCCOM_PATH), $(TOP:=.o))
 PE_TGT	 				=$(addprefix $(TGT_SCCOM_PATH), $(PE:=.o))
+TENSOR_ACCEL_TGT		=$(addprefix $(TGT_SCCOM_PATH), $(TENSOR_ACCEL_SC:=.o))
 DMNI_TGT 				=$(addprefix $(TGT_SCCOM_PATH), $(DMNI:=.o))
 MEMORY_TGT 				=$(addprefix $(TGT_SCCOM_PATH), $(MEMORY:=.o))
 PROCESSOR_TGT 			=$(addprefix $(TGT_SCCOM_PATH), $(PROCESSOR:=.o))
@@ -72,8 +82,8 @@ FAIL_WRAPPER_MODULE_TGT	=$(addprefix $(TGT_SCCOM_PATH), $(FAIL_WRAPPER_MODULE_SC
 INJECTOR_TGT			=$(addprefix $(TGT_SCCOM_PATH), $(INJECTOR_SC:=.o))
 SABOTAGE_TGT			=$(addprefix $(TGT_SCCOM_PATH), $(SABOTAGE_SC:=.o))
 
-default: lib $(HEMPS_PKG) $(STAND) $(ROUTER_VHD) $(SEEK_VHD) $(STAND_SNIP) $(SNIP_VHDL) $(ROUTER_TGT) $(SEEK_TGT) $(FIFO_PDN_TGT) $(FAIL_WRAPPER_MODULE_TGT) $(PROCESSOR_TGT) $(DMNI_TGT) $(MEMORY_TGT) $(PE_TGT) $(IO_PERIPHERAL_TGT) $(INJECTOR_TGT) $(SABOTAGE_TGT)  $(TOP_TGT)
-	@sccom -B/usr/bin -link
+default: lib $(HEMPS_PKG) $(STAND) $(ROUTER_VHD) $(SEEK_VHD) $(STAND_SNIP) $(SNIP_VHDL) $(ROUTER_TGT) $(SEEK_TGT) $(FIFO_PDN_TGT) $(FAIL_WRAPPER_MODULE_TGT) $(PROCESSOR_TGT) $(DMNI_TGT) $(MEMORY_TGT) $(TENSOR_ACCEL_TGT) $(PE_TGT) $(IO_PERIPHERAL_TGT) $(INJECTOR_TGT) $(SABOTAGE_TGT)  $(TOP_TGT)
+	@sccom -B/usr/bin -link -fno-use-linker-plugin
 
 lib:
 	@vlib $(LIB)
@@ -96,6 +106,10 @@ $(TOP_TGT): $(TOP_SRC)
 	$(SC_C) $(dir $<)$(notdir $*).cpp
 
 $(PE_TGT): $(PE_SRC)
+	@printf "${COR}Compiling SystemC source: %s ...${NC}\n" "$(dir $<)$(notdir $*).cpp"
+	$(SC_C) $(dir $<)$(notdir $*).cpp
+
+$(TENSOR_ACCEL_TGT): $(TENSOR_ACCEL_SRC)
 	@printf "${COR}Compiling SystemC source: %s ...${NC}\n" "$(dir $<)$(notdir $*).cpp"
 	$(SC_C) $(dir $<)$(notdir $*).cpp
 

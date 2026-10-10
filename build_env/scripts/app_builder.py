@@ -29,8 +29,12 @@ def main():
     page_size_bytes = get_page_size_KB(yaml_r) * 1024
     
     generate_apps_id(apps_name_list)
-    
-    exit_status = os.system("cd applications/; make sp_init=" + str(page_size_bytes -1) )
+
+    make_cmd = "cd applications/; make sp_init=" + str(page_size_bytes - 1)
+    accel_mode = os.environ.get("ACCEL_MODE", "")
+    if accel_mode:
+        make_cmd += " ACCEL_MODE=" + accel_mode
+    exit_status = os.system(make_cmd)
     
     if exit_status != 0:
         sys.exit("\nError compiling applications' source code\n");

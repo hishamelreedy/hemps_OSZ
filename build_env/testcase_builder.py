@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 import sys
 import os
+import shlex
 import subprocess
 import filecmp
 from shutil import copyfile, rmtree
@@ -96,8 +97,14 @@ def main():
     copy_makefiles_and_waves( HEMPS_PATH,  TESTCASE_NAME, page_size_KB, memory_size_KB, model_description, apps_name_list, simul_time, faults)
     copy_testcase_file( TESTCASE_NAME, INPUT_TESTCASE_FILE_PATH)
 
-    if not (os.path.isfile(TESTCASE_NAME + "/wave.do")) : 
-        os.system("python3 "+ HEMPS_PATH+"/build_env/waves/wavegen.py "+ str(mpsocXsize) + " " + str(mpsocYsize) + " " + str(clusterXsize) + " " + str(clusterYsize) + " " + str(master_addr) + " " + str(snip_number) + " > " + TESTCASE_NAME + "/wave.do")
+    wave_do_path = os.path.join(TESTCASE_NAME, "wave.do")
+    with open(wave_do_path, "w", encoding="utf-8") as wave_out:
+        subprocess.call([
+            "python3",
+            os.path.join(HEMPS_PATH, "build_env", "waves", "wavegen.py"),
+            str(mpsocXsize), str(mpsocYsize), str(clusterXsize), str(clusterYsize),
+            str(master_addr), str(snip_number),
+        ], stdout=wave_out)
 
     #Create other importatants dirs
     create_ifn_exists(TESTCASE_NAME+"/include")
@@ -115,9 +122,10 @@ def main():
 #please includes those file name or extension into the 3rd argument (ignored_names_list), the name can be the file name or its extension
 def generic_copy(source_dir, target_dir, ignored_extension_list):
 
-    exclude_extensions = " --exclude=".join(ignored_extension_list)
-
-    command_string = "rsync -u -r --exclude="+exclude_extensions+" "+source_dir+"/ "+target_dir+"/"
+    excludes = " ".join("--exclude=" + shlex.quote(x) for x in ignored_extension_list)
+    command_string = "rsync -u -r %s %s/ %s/" % (
+        excludes, shlex.quote(source_dir), shlex.quote(target_dir),
+    )
 
     status = os.system(command_string)
 
@@ -202,11 +210,20 @@ def copy_hardware(hemps_path, testcase_path, system_model_description, ga):
     else:
         sys.exit('Error in system_model_description - you must provide a compatible system model description')
 
-    generic_copy(source_hw_path, testcase_hw_path, ignored_names_list)
+    # Always refresh HW (no rsync -u): stale pe/tensor_accel breaks accel_fc_hw MMIO.
+    excludes = " ".join("--exclude=" + shlex.quote(x) for x in ignored_names_list)
+    command_string = "rsync -a -r %s %s/ %s/" % (
+        excludes, shlex.quote(source_hw_path), shlex.quote(testcase_hw_path),
+    )
+    status = os.system(command_string)
+    if status != 0:
+        sys.exit("\nError copying hardware source code\n")
 
     if ga == 0:
         source_hw_path = source_hw_path+"_legacy"
-        command_string = "rsync -r "+source_hw_path+"/ "+testcase_hw_path+"/"
+        command_string = "rsync -r %s/ %s/" % (
+            shlex.quote(source_hw_path), shlex.quote(testcase_hw_path),
+        )
         status = os.system(command_string)
 
 def copy_makefiles_and_waves(hemps_path, testcase_path, page_size_KB, memory_size_KB, system_model_description, apps_list, simul_time, faults):
@@ -276,7 +293,15 @@ def copy_makefiles_and_waves(hemps_path, testcase_path, page_size_KB, memory_siz
             sim_file.write("\nexit")
             sim_file.close()
         else:
-            sim_file.write("\nrun "+str(simul_time)+"ms")
+            sim_file.write("\n# Log tensor_accel + PE MMIO mux (fc1 @ slave1x0)\n")
+            sim_file.write("log -r /test_bench/HeMPS/slave1x0/tensor_unit/*\n")
+            sim_file.write("log -r /test_bench/HeMPS/slave1x0/accel_mem_hit\n")
+            sim_file.write("log -r /test_bench/HeMPS/slave1x0/accel_mem_rdata\n")
+            sim_file.write("log -r /test_bench/HeMPS/slave1x0/accel_pause\n")
+            sim_file.write("log -r /test_bench/HeMPS/slave1x0/cpu_mem_pause\n")
+            sim_file.write("log -r /test_bench/HeMPS/slave1x0/cpu_mem_address_reg\n")
+            sim_file.write("log -r /test_bench/HeMPS/slave1x0/write_enable\n")
+            sim_file.write("\nrun "+str(simul_time)+"ms\n")
             sim_file.write("\nexit")
             sim_file.close()
             
@@ -311,7 +336,11 @@ def copy_makefiles_and_waves(hemps_path, testcase_path, page_size_KB, memory_siz
 
         make_app_path = testcase_path+"/applications/"+app_name+"/makefile"
 
-        copyfile(makes_dir+"/make_app", make_app_path)
+        source_make = hemps_path + "/applications/" + app_name + "/makefile"
+        if os.path.isfile(source_make):
+            copyfile(source_make, make_app_path)
+        else:
+            copyfile(makes_dir+"/make_app", make_app_path)
 
         line = "PAGE_SP_INIT = "+ str((page_size_KB  *  1024) - 1) + "\n"
 
