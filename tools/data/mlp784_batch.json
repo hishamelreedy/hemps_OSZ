@@ -1,0 +1,16 @@
+{
+  "batch_size": 1,
+  "split": "train",
+  "start_idx": 0,
+  "indices": [
+    5
+  ],
+  "labels": [
+    2
+  ],
+  "offline_preds": [
+    2
+  ],
+  "offline_correct": 1,
+  "batch_use_accel": true
+}
