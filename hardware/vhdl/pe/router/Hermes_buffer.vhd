@@ -71,7 +71,9 @@ port(
 		credit_in   	: in  std_logic;
 		sender      	: out std_logic;
 		next_flit   	: in  std_logic;
-		change_routing 		: in  std_logic
+		change_routing 		: in  std_logic;
+		-- Output port chosen by SwitchControl for this packet (LOCAL = no hop).
+		route_out		: in  integer range 0 to NPORT-1
 		);
 end Hermes_buffer;
 
@@ -99,6 +101,52 @@ signal failed_bop				: std_logic;
 signal flit_buff: buff;
 
 signal flit_counter : std_logic_vector(2 downto 0);
+
+	-- Observed path: SwitchControl grant is route_out; stamp CNN msg[1] before HT.
+	constant PATH_ENC_FLIT : integer := 29;
+	constant MAGIC_HI_FLIT : integer := 26;
+	constant MAGIC_LO_FLIT : integer := 27;
+	constant CNN_MAGIC_HI  : regflit := x"4350";
+	constant CNN_MAGIC_LO  : regflit := x"5003";
+	constant PATH_MAX_HOPS : integer := 6;
+
+	signal tx_flit_idx : integer range 0 to 65535;
+	signal tx_cnn_hi   : std_logic;
+	signal tx_cnn_ok   : std_logic;
+
+	function port_dir(p : integer) return std_logic_vector is
+		variable d : std_logic_vector(1 downto 0);
+	begin
+		case p is
+			when 0 | 1 => d := "00"; -- EAST
+			when 2 | 3 => d := "01"; -- WEST
+			when 4 | 5 => d := "10"; -- NORTH
+			when 6 | 7 => d := "11"; -- SOUTH
+			when others => d := "00";
+		end case;
+		return d;
+	end function;
+
+	function path_append(flit : regflit; dir : std_logic_vector(1 downto 0)) return regflit is
+		variable n : integer;
+		variable r : regflit;
+	begin
+		r := flit;
+		n := conv_integer(flit(15 downto 12));
+		if n < PATH_MAX_HOPS then
+			r(15 downto 12) := flit(15 downto 12) + 1;
+			case n is
+				when 0      => r(1 downto 0)   := dir;
+				when 1      => r(3 downto 2)   := dir;
+				when 2      => r(5 downto 4)   := dir;
+				when 3      => r(7 downto 6)   := dir;
+				when 4      => r(9 downto 8)   := dir;
+				when 5      => r(11 downto 10) := dir;
+				when others => null;
+			end case;
+		end if;
+		return r;
+	end function;
 
 	component RAM16X1D is			
 		generic (
@@ -256,8 +304,51 @@ begin
 	end process;
 	
    
-	-- Data ready to be transmited.
-	data_out <= data_read;
+	-- Data ready to be transmited. Hop comes from SwitchControl (route_out), before HT.
+	PathStampTx: process(clock, reset)
+	begin
+		if reset = '1' then
+			tx_flit_idx <= 0;
+			tx_cnn_hi <= '0';
+			tx_cnn_ok <= '0';
+		elsif rising_edge(clock) then
+			if tx_sig = '1' and credit_in = '1' then
+				if bop(CONV_INTEGER(first)) = '1' then
+					tx_flit_idx <= 1;
+					tx_cnn_hi <= '0';
+					tx_cnn_ok <= '0';
+				elsif eop(CONV_INTEGER(first)) = '1' then
+					tx_flit_idx <= 0;
+					tx_cnn_hi <= '0';
+					tx_cnn_ok <= '0';
+				else
+					if tx_flit_idx = MAGIC_HI_FLIT and data_read = CNN_MAGIC_HI then
+						tx_cnn_hi <= '1';
+					elsif tx_flit_idx = MAGIC_LO_FLIT and tx_cnn_hi = '1' and data_read = CNN_MAGIC_LO then
+						tx_cnn_ok <= '1';
+					end if;
+					if tx_flit_idx < 65535 then
+						tx_flit_idx <= tx_flit_idx + 1;
+					end if;
+				end if;
+			end if;
+		end if;
+	end process;
+
+	PathStampMux: process(data_read, tx_sig, tx_flit_idx, tx_cnn_ok, route_out, first, bop)
+		variable this_flit : integer;
+	begin
+		if bop(CONV_INTEGER(first)) = '1' and tx_sig = '1' then
+			this_flit := 0;
+		else
+			this_flit := tx_flit_idx;
+		end if;
+		if tx_cnn_ok = '1' and route_out < LOCAL0 and this_flit = PATH_ENC_FLIT then
+			data_out <= path_append(data_read, port_dir(route_out));
+		else
+			data_out <= data_read;
+		end if;
+	end process;
 	
 	-- Indicates if the current flit is the last packet flit ('1').
 	eop_out <= eop(CONV_INTEGER(first));
