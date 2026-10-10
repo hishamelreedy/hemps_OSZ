@@ -96,6 +96,8 @@ package seek_pkg is
     constant    RESET_HERMES_PORT_SERVICE               : std_logic_vector(TAM_SERVICE_SEEK-1 downto 0) := "110001";
     constant    INIT_ROUTER_RESET                       : std_logic_vector(TAM_SERVICE_SEEK-1 downto 0) := "110010";
     constant    REPORT_SUSPICIOUS_PATH                  : std_logic_vector(TAM_SERVICE_SEEK-1 downto 0) := "110011";
+    constant    NILES_IC_FAULT_BROADCAST                : std_logic_vector(TAM_SERVICE_SEEK-1 downto 0) := "110110";
+    constant    NILES_HEARTBEAT                         : std_logic_vector(TAM_SERVICE_SEEK-1 downto 0) := "110111";
 
 	subtype		regNtarget								is std_logic_vector((TARGET_SIZE-1) downto 0);
 	subtype		regNsource								is std_logic_vector((SOURCE_SIZE-1) downto 0);

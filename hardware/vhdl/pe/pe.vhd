@@ -5,6 +5,7 @@ library ieee;
 use work.mlite_pack.all;                
 use work.standards.all;
 use work.hemps_pkg.all;
+use work.tensor_behav_pkg.all;
 use ieee.std_logic_1164.all;
 use ieee.std_logic_misc.all;
 use ieee.std_logic_arith.all;
@@ -91,6 +92,8 @@ architecture structural of pe is
     signal credit_i_router               : regNport;
     
     signal data_read_ram                 : std_logic_vector(31 downto 0);
+    signal ram_phys_read                 : std_logic_vector(31 downto 0);
+    signal behav_ram_read                : std_logic_vector(31 downto 0);
     signal mem_data_read                 : std_logic_vector(31 downto 0);
     --signal debug_busy                    : std_logic;
     --signal debug_write_data              : std_logic;
@@ -113,9 +116,48 @@ architecture structural of pe is
     signal uart_write_data               : std_logic;
     
     signal slack_update_timer			  : std_logic_vector(31 downto 0);
-        
+
+    signal accel_mem_rdata               : std_logic_vector(31 downto 0);
+    signal accel_mem_hit                 : std_logic;
+    signal accel_pause                   : std_logic;
+    signal accel_ram_en                  : std_logic;
+    signal accel_ram_we                  : std_logic;
+    signal accel_ram_addr                : std_logic_vector(31 downto 2);
+    signal accel_ram_wdata               : std_logic_vector(31 downto 0);
+    signal cpu_addr_a                     : std_logic_vector(31 downto 2);
+    signal ram_enable_a                   : std_logic;
+    signal ram_wbe_a                      : std_logic_vector(3 downto 0);
+    signal ram_data_write_a               : std_logic_vector(31 downto 0);
+
 begin
-	
+
+    behav_ram_read <= behav_load_word(to_integer(unsigned(addr_a)));
+    data_read_ram  <= behav_ram_read;
+
+    shadow_sync : process(clock, reset)
+        variable shadow_init : boolean := false;
+    begin
+        if reset = '1' then
+            shadow_init := false;
+        elsif rising_edge(clock) then
+            if not shadow_init then
+                behav_init_pe_shadow(
+                    to_integer(unsigned(router_address(15 downto 8))),
+                    to_integer(unsigned(router_address(7 downto 0)))
+                );
+                shadow_init := true;
+            end if;
+
+            if ram_enable_a = '1' and ram_wbe_a /= x"0" then
+                behav_store_word(to_integer(unsigned(addr_a)), ram_data_write_a);
+            end if;
+
+            if dmni_enable_internal_ram = '1' and dmni_mem_write_byte_enable /= x"0" then
+                behav_store_word(to_integer(unsigned(addr_b)), dmni_mem_data_write);
+            end if;
+        end if;
+    end process shadow_sync;
+
 -----------------------------------------------------------------------------------
 -- PE COMPONENTS INSTANTIATION
 -----------------------------------------------------------------------------------
@@ -137,11 +179,11 @@ master: if kernel_type = "mas" generate
 	mem : entity work.ram_master
 		port map(
 			clk          => clock,
-			enable_a     => cpu_enable_ram,
-			wbe_a        => cpu_mem_write_byte_enable,
+			enable_a     => ram_enable_a,
+			wbe_a        => ram_wbe_a,
 			address_a    => addr_a,
-			data_write_a => cpu_mem_data_write,
-			data_read_a  => data_read_ram,
+			data_write_a => ram_data_write_a,
+			data_read_a  => ram_phys_read,
 			enable_b     => dmni_enable_internal_ram,
 			wbe_b        => dmni_mem_write_byte_enable,
 			address_b    => addr_b,
@@ -154,11 +196,11 @@ slave: if kernel_type = "sla" generate
 	mem : entity work.ram_slave
 		port map(
 			clk          => clock,
-			enable_a     => cpu_enable_ram,
-			wbe_a        => cpu_mem_write_byte_enable,
+			enable_a     => ram_enable_a,
+			wbe_a        => ram_wbe_a,
 			address_a    => addr_a,
-			data_write_a => cpu_mem_data_write,
-			data_read_a  => data_read_ram,
+			data_write_a => ram_data_write_a,
+			data_read_a  => ram_phys_read,
 			enable_b     => dmni_enable_internal_ram,
 			wbe_b        => dmni_mem_write_byte_enable,
 			address_b    => addr_b,
@@ -230,6 +272,23 @@ end	generate;
     		data_av => uart_write_data,
     		data_in => cpu_mem_data_write_reg
     	);
+
+    tensor_unit : entity work.tensor_accel
+    	port map(
+    		clock       => clock,
+    		reset       => reset,
+    		mem_address => cpu_mem_address_reg,
+    		mem_wdata   => cpu_mem_data_write_reg,
+    		mem_write   => write_enable,
+    		mem_rdata   => accel_mem_rdata,
+    		mem_hit     => accel_mem_hit,
+    		pause_cpu   => accel_pause,
+    		ram_en      => accel_ram_en,
+    		ram_we      => accel_ram_we,
+    		ram_addr    => accel_ram_addr,
+    		ram_wdata   => accel_ram_wdata,
+    		ram_rdata   => data_read_ram
+    	);
     	
 -----------------------------------------------------------------------------------
 -- COMBINATIONAL LOGIC AND WIRING
@@ -268,13 +327,18 @@ end	generate;
                                     req_app when cpu_mem_address_reg = REQ_APP_REG else                                 
                                     ZERO(31 downto 1) & dmni_send_active_sig when cpu_mem_address_reg = DMNI_SEND_ACTIVE else                                    
                                     ZERO(31 downto 1) & dmni_receive_active_sig when cpu_mem_address_reg = DMNI_RECEIVE_ACTIVE else
+                                    accel_mem_rdata when accel_mem_hit = '1' else
                                     data_read_ram;
     
-    --Comb assignments
-    addr_a(31 downto 28)                    <= cpu_mem_address(31 downto 28);
-    addr_a(27 downto PAGE_SIZE_H_INDEX + 1) <= ZERO(27 downto PAGE_SIZE_H_INDEX + 9) & current_page when current_page /= "00000000" and cpu_mem_address(31 downto PAGE_SIZE_H_INDEX + 1) /= ZERO(31 downto PAGE_SIZE_H_INDEX + 1)
+    cpu_addr_a(31 downto 28)                    <= cpu_mem_address(31 downto 28);
+    cpu_addr_a(27 downto PAGE_SIZE_H_INDEX + 1) <= ZERO(27 downto PAGE_SIZE_H_INDEX + 9) & current_page when current_page /= "00000000" and cpu_mem_address(31 downto PAGE_SIZE_H_INDEX + 1) /= ZERO(31 downto PAGE_SIZE_H_INDEX + 1)
     	else cpu_mem_address(27 downto PAGE_SIZE_H_INDEX + 1);
-    addr_a(PAGE_SIZE_H_INDEX downto 2) <= cpu_mem_address(PAGE_SIZE_H_INDEX downto 2);
+    cpu_addr_a(PAGE_SIZE_H_INDEX downto 2)      <= cpu_mem_address(PAGE_SIZE_H_INDEX downto 2);
+
+    addr_a           <= accel_ram_addr when accel_ram_en = '1' else cpu_addr_a;
+    ram_enable_a     <= '1' when accel_ram_en = '1' else cpu_enable_ram;
+    ram_wbe_a        <= "1111" when accel_ram_we = '1' else cpu_mem_write_byte_enable;
+    ram_data_write_a <= accel_ram_wdata when accel_ram_we = '1' else cpu_mem_data_write;
 
     addr_b                   <= dmni_mem_address(31 downto 2);
     data_av                  <= '1' when cpu_mem_address_reg = DEBUG and write_enable = '1' else '0';
@@ -283,7 +347,7 @@ end	generate;
     --debug_write_busy         <= busy_debug;
     --debug_busy               <= '1' when cpu_mem_address_reg = DEBUG and write_enable = '1' and busy_debug = '1' else '0';
     --cpu_mem_pause            <= cpu_repo_access or debug_busy;
-    cpu_mem_pause            <= cpu_repo_access;
+    cpu_mem_pause            <= cpu_repo_access or accel_pause;
     irq                      <= '1' when (irq_status /= x"00" and irq_mask_reg /= x"00") else '0';
     dmni_data_read           <= cpu_mem_data_write_reg;
     dmni_mem_data_read       <= mem_data_read when dmni_enable_internal_ram = '1' else repo_data_read;

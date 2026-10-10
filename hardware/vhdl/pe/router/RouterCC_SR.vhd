@@ -107,6 +107,21 @@ signal bufferAP				: regNport;
 signal tx_internal         	: regNport;
 
 signal reset_buffer			: regNport;
+
+	type int_nport is array (0 to NPORT-1) of integer range 0 to NPORT-1;
+	signal route_out : int_nport;
+
+	function granted_mesh_port(row : std_logic_vector) return integer is
+		variable o : integer;
+	begin
+		for o in 0 to LOCAL0-1 loop
+			if row(o) = '1' then
+				return o;
+			end if;
+		end loop;
+		return LOCAL0;
+	end function;
+
 begin
 	
 	fifo_generation : for i in 0 to NPORT-1 generate
@@ -131,10 +146,15 @@ begin
 			credit_in 		=> data_ack(i),
 			next_flit 		=> next_flit(i),
 			credit_out 		=> credit_o(i),
-			change_routing	=> change_routing(i)
+			change_routing	=> change_routing(i),
+			route_out		=> route_out(i)
 			);
 		reset_buffer(i) <= reset or reset_port(i);
 	end generate ; -- fifo_generation
+
+	GenRouteOut: for i in 0 to NPORT-1 generate
+		route_out(i) <= granted_mesh_port(table(i));
+	end generate;
 
 	SwitchControl_SR_write : Entity work.SwitchControl_SR_write
 	generic map(

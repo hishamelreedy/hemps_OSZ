@@ -9,7 +9,11 @@ entity router_ht is
     generic
     (
         address         : regmetadeflit_32;
-        ht_port            : integer
+        ht_port            : integer;
+        -- f_payload_intermittent only: 0 = XOR x"00FF" (yaml 'f'),
+        -- 1 = single bit flip in value bits 15..0 (yaml 'g'), 2 = single bit
+        -- flip in value bits 31..16 (yaml 'h'); bit chosen by the LFSR per window.
+        flip_mode       : integer := 0
     );
     port
     (
@@ -774,5 +778,262 @@ begin
             end if;
         end if;
     end process;
+
+end architecture;
+
+architecture f_payload_intermittent of router_ht is
+
+    constant COUNTER_LENGTH         : integer := 16;
+    constant LFSR_FIXED_TURNS       : integer := 8;
+    constant LFSR_POLYNOMIAL        : std_logic_vector(COUNTER_LENGTH-1 downto 0) := x"D008";
+    constant LFSR_SEED              : std_logic_vector(COUNTER_LENGTH-1 downto 0) := x"ABBA"; -- PAYLOAD_HT_SEED (set per run by wsl_run_niles_hb.sh HT_SEED)
+    -- Payload-only corruption (Rowhammer-like data fault on tensor values).
+    -- Flits are 16 bits, CNN msg words are 32 bits (hi flit first). Same
+    -- indexing as Hermes_buffer PathStampTx: BOP flit = 0, msg[k] occupies
+    -- flits MSG_BASE_FLIT+2k (hi) and MSG_BASE_FLIT+2k+1 (lo).
+    -- CNN msg: [0] MAGIC, [1] path, [2..5] len/chunk/nchunks/pairs,
+    -- [6 .. 6+pairs-1] header slots, then (slot, value) interleaved pairs.
+    -- Only the lo flit of value words is XORed; magic, header fields, slots
+    -- and non-CNN packets (kernel/control/probes) are never touched.
+    constant MSG_BASE_FLIT          : integer := 26;
+    constant CNN_IDX_PAIRS          : integer := 5;
+    constant CNN_HDR_WORDS          : integer := 6;
+    constant CNN_MAGIC_HI           : regflit := x"4350";
+    constant CNN_MAGIC_LO           : regflit := x"5003";
+    constant CORRUPT_MASK           : regflit := x"00FF";
+
+    constant WAITING_BOP            : std_logic := '0';
+    constant WAITING_EOP            : std_logic := '1';
+
+    type StateType is (GEN_DISABLED_TIME, DISABLED, GEN_ENABLED_TIME, ENABLED, POSTPONE);
+    signal state        : StateType;
+    signal next_state   : StateType;
+
+    signal counter      : std_logic_vector(COUNTER_LENGTH-1 downto 0);
+    signal lfsr         : std_logic_vector(COUNTER_LENGTH-1 downto 0);
+    signal lfsr_mask    : std_logic_vector(COUNTER_LENGTH-1 downto 0);
+
+    signal waiting_which_flag   : std_logic;
+    signal postpone_activation  : std_logic;
+
+    signal xfer         : std_logic;  -- flit accepted downstream this cycle
+    signal flit_index   : integer range 0 to 65535;  -- index of the next flit after BOP
+    signal cur_flit     : integer range 0 to 65535;  -- index of the flit on the bus now
+    signal cnn_hi_ok    : std_logic;
+    signal cnn_ok       : std_logic;
+    signal pairs_this   : integer range 0 to 65535;
+    signal pairs_valid  : std_logic;
+    signal word_idx     : integer range 0 to 32767;
+    signal value_word   : std_logic;
+    signal corrupt_now  : std_logic;
+    signal flip_mask    : regflit;
+    signal pkt_hits     : integer range 0 to 65535;  -- corrupted flits in this packet
+    -- 1 = lo flit of the value word, 0 = hi flit (flip_mode 2).
+    function sel_parity(mode : integer) return integer is
+    begin
+        if mode = 2 then return 0; else return 1; end if;
+    end function;
+    constant target_parity : integer := sel_parity(flip_mode);
+
+begin
+
+    ht_tx           <= router_tx;
+    ht_clock_tx     <= router_clock_tx;
+    ht_data_out     <= router_data_out xor flip_mask when corrupt_now = '1' else router_data_out;
+    ht_eop_out      <= router_eop_out;
+    ht_bop_out      <= router_bop_out;
+    router_cred_in  <= ht_cred_in;
+
+    -- Single-bit mode: LFSR only shifts while generating a window length, so
+    -- the bit stays fixed for a whole ENABLED window (a repeatedly flipping cell).
+    GenFlipMask: process(lfsr)
+    begin
+        if flip_mode = 1 or flip_mode = 2 then
+            flip_mask <= (others => '0');
+            flip_mask(conv_integer(lfsr(3 downto 0))) <= '1';
+        else
+            flip_mask <= CORRUPT_MASK;
+        end if;
+    end process;
+
+    xfer     <= router_tx and ht_cred_in;
+    cur_flit <= 0 when router_bop_out = '1' else flit_index;
+    word_idx <= (cur_flit - MSG_BASE_FLIT) / 2 when cur_flit >= MSG_BASE_FLIT else 0;
+
+    -- Value words: msg[6+pairs+2i+1], i.e. odd offsets into the pair region.
+    value_word <= '1' when pairs_valid = '1'
+                       and word_idx >= CNN_HDR_WORDS + pairs_this
+                       and ((word_idx - CNN_HDR_WORDS - pairs_this) mod 2) = 1
+                  else '0';
+
+    -- Modes 0/1 hit the lo flit (value bits 15..0); mode 2 the hi flit
+    -- (bits 31..16, incl. the sign bit).
+    corrupt_now <= '1' when state = ENABLED and router_tx = '1' and cnn_ok = '1'
+                        and value_word = '1'
+                        and cur_flit >= MSG_BASE_FLIT
+                        and ((cur_flit - MSG_BASE_FLIT) mod 2) = target_parity
+                   else '0';
+
+    ChangeState: process(clock, reset)
+    begin
+        if reset='1' then
+            state <= GEN_DISABLED_TIME;
+        elsif rising_edge(clock) then
+            state <= next_state;
+        end if;
+    end process;
+
+    NextStateLogic: process(state, counter, postpone_activation)
+    begin
+        case state is
+            when GEN_DISABLED_TIME =>
+                if counter = 0 then
+                    next_state <= DISABLED;
+                else
+                    next_state <= GEN_DISABLED_TIME;
+                end if;
+
+            when DISABLED =>
+                if counter = 0 then
+                    next_state <= GEN_ENABLED_TIME;
+                else
+                    next_state <= DISABLED;
+                end if;
+
+            when GEN_ENABLED_TIME =>
+                if counter = 0 and postpone_activation = '0' then
+                    next_state <= ENABLED;
+                elsif counter = 0 and postpone_activation = '1' then
+                    next_state <= POSTPONE;
+                else
+                    next_state <= GEN_ENABLED_TIME;
+                end if;
+
+            when ENABLED =>
+                if counter = 0 then
+                    next_state <= GEN_DISABLED_TIME;
+                else
+                    next_state <= ENABLED;
+                end if;
+
+            when POSTPONE =>
+                if postpone_activation = '0' then
+                    next_state <= ENABLED;
+                else
+                    next_state <= POSTPONE;
+                end if;
+        end case;
+    end process;
+
+    Countdown: process(clock, reset)
+    begin
+        if reset='1' then
+            counter <= conv_std_logic_vector(LFSR_FIXED_TURNS, counter'length);
+        elsif rising_edge(clock) then
+            if counter = 0 then
+                if state = GEN_DISABLED_TIME then
+                    counter <= lfsr or x"5000";
+                elsif state = GEN_ENABLED_TIME then
+                    counter <= lfsr and x"1FFF";
+                elsif state = DISABLED or state = ENABLED then
+                    counter <= conv_std_logic_vector(LFSR_FIXED_TURNS, counter'length);
+                end if;
+            elsif postpone_activation = '0' then
+                counter <= counter - 1;
+            end if;
+        end if;
+    end process;
+
+    GenMaskLFSR: for k in COUNTER_LENGTH-1 downto 0 generate
+        lfsr_mask(k) <= lfsr_polynomial(k) and lfsr(0);
+    end generate;
+
+    ShiftLFSR: process(clock, reset)
+    begin
+        if reset ='1' then
+            lfsr <= LFSR_SEED;
+        elsif rising_edge(clock) then
+            if state = GEN_DISABLED_TIME or state = GEN_ENABLED_TIME then
+                lfsr <= ('0' & lfsr(COUNTER_LENGTH-1 downto 1)) xor lfsr_mask;
+            end if;
+        end if;
+    end process;
+
+    -- Tracks flit position only on accepted flits (tx and credit), so
+    -- backpressure stalls do not advance the index.
+    FlitCounter: process(clock, reset)
+    begin
+        if reset = '1' then
+            flit_index <= 0;
+            cnn_hi_ok <= '0';
+            cnn_ok <= '0';
+            pairs_this <= 0;
+            pairs_valid <= '0';
+            pkt_hits <= 0;
+        elsif rising_edge(clock) then
+            if xfer = '1' then
+                if router_bop_out = '1' then
+                    flit_index <= 1;
+                    cnn_hi_ok <= '0';
+                    cnn_ok <= '0';
+                    pairs_this <= 0;
+                    pairs_valid <= '0';
+                    pkt_hits <= 0;
+                elsif router_eop_out = '1' then
+                    -- Attack exposure log, one line per corrupted packet
+                    -- (parsed by testcases/mlp784/report_baseline.py).
+                    if corrupt_now = '1' or pkt_hits > 0 then
+                        if corrupt_now = '1' then
+                            report "HT_CORRUPT router=" & integer'image(conv_integer(address)) &
+                                   " port=" & integer'image(ht_port) &
+                                   " flits=" & integer'image(pkt_hits + 1) severity note;
+                        else
+                            report "HT_CORRUPT router=" & integer'image(conv_integer(address)) &
+                                   " port=" & integer'image(ht_port) &
+                                   " flits=" & integer'image(pkt_hits) severity note;
+                        end if;
+                    end if;
+                    pkt_hits <= 0;
+                    flit_index <= 0;
+                    cnn_hi_ok <= '0';
+                    cnn_ok <= '0';
+                    pairs_valid <= '0';
+                else
+                    if corrupt_now = '1' and pkt_hits < 65535 then
+                        pkt_hits <= pkt_hits + 1;
+                    end if;
+                    if cur_flit = MSG_BASE_FLIT and router_data_out = CNN_MAGIC_HI then
+                        cnn_hi_ok <= '1';
+                    elsif cur_flit = MSG_BASE_FLIT + 1 and cnn_hi_ok = '1'
+                          and router_data_out = CNN_MAGIC_LO then
+                        cnn_ok <= '1';
+                    end if;
+                    -- pairs_this: lo flit of msg[5] (always < 2^16).
+                    if cur_flit = MSG_BASE_FLIT + 2*CNN_IDX_PAIRS + 1 then
+                        pairs_this <= conv_integer(router_data_out);
+                        pairs_valid <= '1';
+                    end if;
+                    if flit_index < 65535 then
+                        flit_index <= flit_index + 1;
+                    end if;
+                end if;
+            end if;
+        end if;
+    end process;
+
+    EopRegister: process(clock, reset)
+    begin
+        if reset ='1' then
+            waiting_which_flag <= WAITING_BOP;
+        elsif rising_edge(clock) then
+            if router_bop_out='1' then
+                waiting_which_flag <= WAITING_EOP;
+            elsif router_eop_out='1' then
+                waiting_which_flag <= WAITING_BOP;
+            end if;
+        end if;
+    end process;
+
+    postpone_activation <= '1' when (waiting_which_flag = WAITING_EOP) or router_tx='1' else '0';
 
 end architecture;

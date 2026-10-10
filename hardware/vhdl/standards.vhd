@@ -70,7 +70,21 @@ package standards is
         constant PENDING_SERVICE_INTR : std_logic_vector(31 downto 0) := x"20000400";
 	
         constant CLOCK_HOLD_WAIT_KERNEL : std_logic_vector(31 downto 0) := x"20000410";
-	
+
+        -- Tensor accelerator MMIO (behavioral single-cycle FC model)
+        constant ACCEL_CTRL             : std_logic_vector(31 downto 0) := x"20000420";
+        constant ACCEL_CYCLES           : std_logic_vector(31 downto 0) := x"20000424";
+        constant ACCEL_STATUS           : std_logic_vector(31 downto 0) := x"20000428";
+        constant ACCEL_IN_ADDR          : std_logic_vector(31 downto 0) := x"20000430";
+        constant ACCEL_OUT_ADDR         : std_logic_vector(31 downto 0) := x"20000434";
+        constant ACCEL_WEIGHT_ADDR      : std_logic_vector(31 downto 0) := x"20000438";
+        constant ACCEL_DIMS             : std_logic_vector(31 downto 0) := x"2000043C";
+        constant ACCEL_OPCODE           : std_logic_vector(31 downto 0) := x"20000460";
+        constant ACCEL_DIMS1            : std_logic_vector(31 downto 0) := x"20000464";
+        constant ACCEL_OP_FC            : integer := 0;
+        constant ACCEL_OP_CONV2D        : integer := 1;
+        constant ACCEL_OP_AVGPOOL2X2    : integer := 2;
+        constant ACCEL_OP_RELU          : integer := 3;
 	
 	constant SLACK_TIME_MONITOR : std_logic_vector(31 downto 0) := x"20000370";
 	constant SLACK_MONITOR_WINDOW : integer :=	50000;
