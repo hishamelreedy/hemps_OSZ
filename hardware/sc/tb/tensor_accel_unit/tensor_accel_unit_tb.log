@@ -1,0 +1,26 @@
+
+        SystemC 2.3.3-Accellera --- Jun 14 2025 06:46:49
+        Copyright (c) 1996-2018 by all Contributors,
+        ALL RIGHTS RESERVED
+=== tensor_accel SystemC unit TB ===
+OK   FC dbg_status
+OK   FC (n=2)
+OK   CONV dbg_status
+OK   CONV2D+ReLU (n=8)
+OK   AVGPOOL2X2 (n=2)
+OK   RELU (n=5)
+OK   LeNet-shaped C1 (8x8 k=5) (n=32)
+--- test_full_lenet5 batch=10 (SW ref vs HW accel) ---
+  sample 0 idx=0 pred_sw=7 pred_hw=7 label=7 sw_hw=OK
+  sample 1 idx=1 pred_sw=6 pred_hw=6 label=2 sw_hw=OK
+  sample 2 idx=2 pred_sw=1 pred_hw=1 label=1 sw_hw=OK
+  sample 4 idx=4 pred_sw=9 pred_hw=9 label=4 sw_hw=OK
+  sample 6 idx=6 pred_sw=9 pred_hw=9 label=4 sw_hw=OK
+  sample 8 idx=8 pred_sw=6 pred_hw=6 label=5 sw_hw=OK
+  sample 9 idx=9 pred_sw=9 pred_hw=9 label=9 sw_hw=OK
+LeNet batch: sw_hw_match=10/10  pred_correct=6/10 (acc=60.00%)
+OK   LeNet batch all SW==HW
+=== summary: 18 checks, 0 fails ===
+RESULT: PASS
+
+Info: /OSCI/SystemC: Simulation stopped by user.
