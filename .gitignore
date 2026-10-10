@@ -23,3 +23,8 @@ simulation_data/*
 docs/*
 slides_status/*
 slides/*
+tools/data/t10k-images-idx3-ubyte.gz
+tools/data/t10k-labels-idx1-ubyte.gz
+tools/data/train-images-idx3-ubyte.gz
+tools/data/train-labels-idx1-ubyte.gz
+paper1/*
