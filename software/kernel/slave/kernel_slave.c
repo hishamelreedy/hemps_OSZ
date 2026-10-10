@@ -36,6 +36,8 @@
 
 #include "../../modules/osz_slave.h"
 #include "../../modules/probe.h"
+#include "../../modules/niles_health.h"
+#include "../../include/mlp784_niles_config.h"
 
 #ifdef AES_MODULE
 #include "../../modules/aes.h"
@@ -313,21 +315,85 @@ void write_local_msg_to_task(TCB * task_tcb_ptr, int msg_lenght, int * msg_data)
 *    
 *    return:  none
 *--------------------------------------------------------------------*/
+static void niles_report_stage1_seq_hole(int producer_task, int reporter_layer) {
+	int suspect_pe = get_task_location(producer_task);
+
+	puts("[IC-ALERT] stage=I reason=SEQ_HOLE layer=");
+	puts(itoa(reporter_layer));
+	puts(" suspect_task=");
+	puts(itoa(producer_task));
+	puts(" pe=");
+	puts(itoa(suspect_pe));
+	puts(" tick=");
+	puts(itoa(MemoryRead(TICK_COUNTER)));
+	puts("\n");
+
+	if (suspect_pe >= 0) {
+#if NILES_ENABLE_BROADCAST
+		niles_broadcast_ic_fault(
+			suspect_pe, reporter_layer, get_net_address() & 0xFFFF);
+#endif
+#if NILES_GUSTAVO_BRIDGE
+		report_suspicious_path_to_mpe((unsigned int)suspect_pe);
+#endif
+	}
+}
+
+#if NILES_ENABLE_BROADCAST || NILES_GUSTAVO_BRIDGE
+static int niles_md_watch_session = -1;
+static unsigned int niles_md_watch_deadline = 0;
+
+static void niles_arm_md_watchdog(int session_index, unsigned int now) {
+	if (session_index < 0 || session_index >= MAX_SESSIONS)
+		return;
+	niles_md_watch_session = session_index;
+	/* Short window: MD should follow MDC on the same hop immediately on clean runs. */
+	niles_md_watch_deadline = now + 5000u;
+}
+
+static void niles_clear_md_watchdog(int session_index) {
+	if (niles_md_watch_session == session_index)
+		niles_md_watch_session = -1;
+}
+
+static void niles_check_md_watchdog(unsigned int now) {
+	int producer_task;
+
+	if (niles_md_watch_session < 0)
+		return;
+	if (now <= niles_md_watch_deadline)
+		return;
+	if (Sessions[niles_md_watch_session].status != WAITING_DATA &&
+	    Sessions[niles_md_watch_session].status != SUSPICIOUS)
+	{
+		niles_md_watch_session = -1;
+		return;
+	}
+
+	producer_task = (int)Sessions[niles_md_watch_session].producer;
+	niles_md_watch_session = -1;
+	niles_report_stage1_seq_hole(producer_task, 0);
+}
+#else
+static void niles_arm_md_watchdog(int session_index, unsigned int now) {
+	(void)session_index;
+	(void)now;
+}
+static void niles_clear_md_watchdog(int session_index) { (void)session_index; }
+static void niles_check_md_watchdog(unsigned int now) { (void)now; }
+#endif
+
 void timeoutTimer(Session* sessions){
 	int i;
 	unsigned int timeoutReg;
 	timeoutReg = MemoryRead(TIMEOUT_REG);
 
-	// if (timeoutReg <= 1)
-	// 	timeoutReg = MAX_TIMEOUT_VAL;
-	// for (i = 0; i < MAX_SESSIONS; i++){
-	// 	if ((sessions[i].status == WAITING_DATA) || (sessions[i].status == IO_WAITING) || (sessions[i].status == SUSPICIOUS)){
-	// 		if ((timeoutReg > sessions[i].timeoutThreshold)){
-	// 			timeoutReg = sessions[i].timeoutThreshold;
-	// 		}
-	// 	}
-	// }
-	// puts("[Timer]-- timeoutReg: "); puts(itoa(timeoutReg)); puts("\n");
+	/* Original platform behaviour in ALL arms: re-arm the session timeout when
+	 * it expires. The former "re-enabled per-session scan" (non-faithful arms)
+	 * raised the local copy before this check, so the timer was never re-armed:
+	 * no session timeouts and no session recovery in the NILES arm. */
+	(void)i;
+	(void)sessions;
 	if (timeoutReg <= 1){
 		timeoutReg = MAX_TIMEOUT_VAL;
 		MemoryWrite(TIMEOUT_REG,timeoutReg);
@@ -513,7 +579,10 @@ int Syscall(unsigned int service, unsigned int arg0, unsigned int arg1, unsigned
 					#endif
 					// puts("MESSAGE DELIVERY  to - prod: "); puts(itoa(current->id)); puts("  cons: "); puts(itoa(arg1));puts("  addr: "); puts(itoh(&arg1));puts("\n");
 					pipe_ptr->status = WAITING_ACK;
-					send_message_delivery(producer_task, consumer_task, consumer_PE, msg_read);
+					/* Send the PIPE copy, not msg_read: the DMNI reads asynchronously and
+					 * the task may refill its buffer (next tensor chunk) before the send
+					 * ends, which delivered chunk N headers with chunk N+1 payload. */
+					send_message_delivery(producer_task, consumer_task, consumer_PE, &pipe_ptr->message);
 				} 
 			}
 
@@ -621,6 +690,43 @@ int Syscall(unsigned int service, unsigned int arg0, unsigned int arg1, unsigned
 			puts("\n");
 
 		break;
+
+		case IC_ALERT:
+		{
+			int suspect_pe = get_task_location((int)arg1);
+
+			puts("[IC-ALERT] layer=");
+			puts(itoa(arg0));
+			puts(" suspect_task=");
+			puts(itoa(arg1));
+			puts(" pe=");
+			puts(itoa(suspect_pe));
+			puts(" tick=");
+			puts(itoa(MemoryRead(TICK_COUNTER)));
+			puts("\n");
+
+			if (suspect_pe >= 0) {
+#if NILES_ENABLE_BROADCAST
+				niles_note_rx_path(arg2 & 0xFFFF, (unsigned int)suspect_pe, (int)arg1);
+				niles_broadcast_ic_fault(
+					suspect_pe, (int)arg0, get_net_address() & 0xFFFF);
+#endif
+#if NILES_GUSTAVO_BRIDGE
+				report_suspicious_path_to_mpe((unsigned int)suspect_pe);
+#endif
+			}
+
+			return 1;
+		}
+		break;
+
+		case NILES_HB_SEND:
+			niles_send_heartbeat(get_net_address() & 0xFFFF);
+			if (arg0)
+				niles_hb_wait_interval();
+			return 1;
+		break;
+
 		case REALTIME:
 
 			if (MemoryRead(DMNI_SEND_ACTIVE)){
@@ -1271,6 +1377,7 @@ int handle_packet(ServiceHeader * p) {
 			tcb_ptr->reg[0] = 1;
 
 			auxSession->status = WAITING_ANY;
+			niles_clear_md_watchdog(auxIndex);
 			puts(">Autenticado<\n");
 			// auxSession->requested += 1;
 
@@ -1371,6 +1478,7 @@ int handle_packet(ServiceHeader * p) {
 
 	tEnd = MemoryRead(TICK_COUNTER);
 	session_time_puts("DATA DEL= ");session_time_puts(itoa(tEnd-tInit));session_time_puts("\n");
+	niles_check_md_watchdog(tEnd);
 	break;
 
 	case TASK_ALLOCATION:
@@ -2095,6 +2203,7 @@ int SeekInterruptHandler(){
 					auxSession->sent += 1;
 					auxSession->status = WAITING_DATA;
 					auxSession->time = tInit;
+					niles_arm_md_watchdog(auxIndex, tInit);
 					timeoutTimer(Sessions);
 				} else{
 					puts("ERROR(MDC): status - ");puts(itoa(auxSession->status));puts("\n");
@@ -2105,6 +2214,7 @@ int SeekInterruptHandler(){
 			}
 		tEnd = MemoryRead(TICK_COUNTER);
 		session_time_puts("CONTROL DEL= ");session_time_puts(itoa(tEnd-tInit));session_time_puts("\n");
+		niles_check_md_watchdog(tEnd);
 		break;
 
 		case MSG_REQUEST_CONTROL: //MRC_HANDLER
@@ -2565,6 +2675,14 @@ int SeekInterruptHandler(){
 			receive_probe_control(source, target, payload);
 			break;
 
+		case NILES_IC_FAULT_BROADCAST:
+			niles_handle_ic_fault_broadcast(source, target, payload);
+			break;
+
+		case NILES_HEARTBEAT:
+			niles_handle_heartbeat(source, target, payload);
+			break;
+
 		case INIT_ROUTER_RESET:
 			// clear_residual_switching_from_current_path(target, source);
 			break;
@@ -2617,6 +2735,7 @@ void OS_InterruptServiceRoutine(unsigned int status) {
 	}
 
 	call_scheduler = 0;
+	niles_check_md_watchdog(MemoryRead(TICK_COUNTER));
 
 	if ( status & IRQ_NOC ){
 		auxTime = MemoryRead(TICK_COUNTER);
@@ -2654,7 +2773,11 @@ void OS_InterruptServiceRoutine(unsigned int status) {
 	}
 
 	if ( status & IRQ_SCHEDULER ){
-
+#if !GUSTAVO_FAITHFUL
+		/* Keep Gustavo probe batches moving even if TIMEOUT IRQ stalls after BH hang. */
+		monitor_outgoing_batches();
+		monitor_probe_timeout();
+#endif
 		call_scheduler = 1;
 	}
 
@@ -2686,6 +2809,10 @@ void OS_InterruptServiceRoutine(unsigned int status) {
 			
 			// payload 1 means its a non-IO packet and will trigger localization
 			Seek(MISSING_PACKET, (timed_out_src_addr  << 16) | timed_out_tgt_addr, cluster_master_address, 1);
+#if NILES_ENABLE_BROADCAST
+			niles_report_stage1_seq_hole(
+				(int)Sessions[timed_out_session_index].producer, 0);
+#endif
 		}
 
 		// TimeoutFlag >= 2: Message was lost when communicating with PERIPHERAL
@@ -2697,6 +2824,8 @@ void OS_InterruptServiceRoutine(unsigned int status) {
 
 		monitor_probe_timeout();
 		monitor_outgoing_batches();
+
+		niles_check_md_watchdog(MemoryRead(TICK_COUNTER));
 
 		timeoutTimer(Sessions);
 		OS_InterruptMaskSet(IRQ_TIMEOUT);
@@ -2857,6 +2986,7 @@ int main(){
 	initSessions(); // iniciando passando o addr do mestre pra osz_slave.c (precisa pro warning)
 
 	init_probe_structures(&cluster_master_address);
+	niles_fault_table_init();
 	timeoutTimer(0);
 
 	init_service_header_slots();

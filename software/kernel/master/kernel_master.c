@@ -36,6 +36,7 @@
 #include "../../modules/osz_master.h"
 #include "../../modules/snip_master.h"
 #include "../../modules/probe_master.h"
+#include "../../modules/niles_health.h"
 
 
 NewTask * pending_new_task;
@@ -1371,6 +1372,14 @@ int SeekInterruptHandler(){
 
 		case REPORT_SUSPICIOUS_PATH:
 			handle_report_suspicious_path(source, target, payload);
+			break;
+
+		case NILES_IC_FAULT_BROADCAST:
+			niles_handle_ic_fault_broadcast(source, target, payload);
+			break;
+
+		case NILES_HEARTBEAT:
+			niles_handle_heartbeat(source, target, payload);
 			break;
 			
 		//----------------------------------------------------------------------
