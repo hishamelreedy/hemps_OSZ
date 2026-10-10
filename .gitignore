@@ -18,3 +18,6 @@ build_env/gui_router_seek_lite/p_properties.json
 # Generated flat scenario copies for hemps-run (see wsl_run_niles_hb.sh)
 testcases/**
 app_backup/*
+_backup_before_faithful_baseline_2026-10-02/*
+simulation_data/*
+docs/*
