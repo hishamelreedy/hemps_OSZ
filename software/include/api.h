@@ -25,6 +25,8 @@
 #define IOWRITEPIPE 		6
 #define IOREADPIPE  		7
 #define DULL		  		8
+#define IC_ALERT            9
+#define NILES_HB_SEND      10
 
 
 #define MemoryWrite(A,V) *(volatile unsigned int*)(A)=(V)
@@ -40,6 +42,7 @@ extern int SystemCall();
 #define GetTick() SystemCall(GETTICK,0,0,0)
 #define Echo(str) SystemCall(ECHO, (char*)str,0,0)
 #define exit() while(!SystemCall(EXIT, 0, 0, 0))
+#define NilesSendHeartbeat() SystemCall(NILES_HB_SEND, 0, 0, 0)
 
 //Real-Time API - time represented in microseconds
 #define RealTime(period, deadline, execution_time) while(!SystemCall(REALTIME, period, deadline, execution_time))
