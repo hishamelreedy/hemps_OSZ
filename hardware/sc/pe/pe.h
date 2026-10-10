@@ -10,7 +10,7 @@
 #include "dmni/plasma_sender.h"
 // #include "router/router_cc.h"
 #include "memory/ram.h"
-
+#include "tensor_accel/tensor_accel.h"
 
 #include "router/RouterCCwrapped2.h"
 #include "router/seek/router_seek_wrapped2.h"
@@ -253,6 +253,10 @@ SC_MODULE(pe) {///////////////////////// INPUT AND OUTPUT //////////////////////
 	sc_signal < sc_uint <32 > > end_sim_reg;
 	sc_signal < sc_uint <32 > > slack_update_timer;
 
+	sc_signal < sc_uint <32 > > accel_mem_rdata;
+	sc_signal < bool >          accel_mem_hit;
+	sc_signal < bool >          accel_pause;
+
 	// -- NULL ROUTER SIGNALS 
 	sc_signal<bool >			router_access_o[2];
 	sc_signal<bool >			router_access_i[2];
@@ -274,6 +278,7 @@ SC_MODULE(pe) {///////////////////////// INPUT AND OUTPUT //////////////////////
 
 	mlite_cpu		*	cpu;
 	ram				* 	mem;
+	tensor_accel	*	tensor_unit;
 	dmni 			*	dm_ni;
 	plasma_sender 	*	ser;
 
@@ -345,6 +350,21 @@ SC_MODULE(pe) {///////////////////////// INPUT AND OUTPUT //////////////////////
 		mem->address_b(addr_b);
 		mem->data_write_b(dmni_mem_data_write);
 		mem->data_read_b(mem_data_read);
+
+		tensor_unit = new tensor_accel("tensor_unit", mem, router_address, shift_mem_page);
+		tensor_unit->clock(clock);
+		tensor_unit->reset(reset);
+		/* Same wiring pattern as mlp784_accel_unit: latched addr/data + write_enable. */
+		tensor_unit->mem_address(cpu_mem_address_reg);
+		tensor_unit->mem_read_address(cpu_mem_address_reg);
+		tensor_unit->mem_write_address(cpu_mem_address_reg);
+		tensor_unit->mem_write_data(cpu_mem_data_write_reg);
+		tensor_unit->mem_write(write_enable);
+		tensor_unit->mem_rdata(accel_mem_rdata);
+		tensor_unit->mem_hit(accel_mem_hit);
+		tensor_unit->pause_cpu(accel_pause);
+		tensor_unit->tick_counter(tick_counter);
+		tensor_unit->current_page(current_page);
 
 		dm_ni = new dmni("dmni", router_address);
 		dm_ni->clock(clock);
@@ -658,17 +678,22 @@ SC_MODULE(pe) {///////////////////////// INPUT AND OUTPUT //////////////////////
 		
 		SC_METHOD(comb_assignments);
 		sensitive << cpu_mem_address << dmni_mem_address << cpu_mem_address_reg << write_enable;
+		sensitive << cpu_mem_data_write << cpu_mem_write_byte_enable;
 		sensitive << cpu_mem_data_write_reg << irq_mask_reg << irq_status;
 		sensitive << time_slice << tick_counter_local;
 		sensitive << dmni_send_active_sig << dmni_receive_active_sig << data_read_ram;
 		sensitive << cpu_set_op << cpu_set_size << cpu_set_address << cpu_set_address_2 << cpu_set_size_2 << cpu_send_kernel << cpu_fail_kernel<< cpu_wait_kernel << dmni_enable_internal_ram;
 		sensitive << mem_data_read << cpu_enable_ram << cpu_mem_write_byte_enable_reg << dmni_mem_write_byte_enable << mem_address_service_header_kernel;
 		sensitive << dmni_mem_data_write << ni_intr << slack_update_timer;
+		sensitive << accel_pause;
 		
 		SC_METHOD(mem_mapped_registers);
+		sensitive << cpu_mem_address;
 		sensitive << cpu_mem_address_reg;
 		sensitive << tick_counter_local;
 		sensitive << data_read_ram;
+		sensitive << accel_mem_hit;
+		sensitive << accel_mem_rdata;
 		sensitive << time_slice;
 		sensitive << irq_status;
 		
