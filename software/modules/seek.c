@@ -185,6 +185,8 @@ void Seek(unsigned int service, unsigned int source, unsigned int target, unsign
 			case AP_NOTIFICATION:
 			case UNEXPECTED_DATA:
 			case MISSING_PACKET:
+			case NILES_IC_FAULT_BROADCAST:
+			case NILES_HEARTBEAT:
 
 				 MemoryWrite(SEEK_OPMODE_REGISTER,GLOBAL_MODE);
 			break;

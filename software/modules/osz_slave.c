@@ -489,9 +489,8 @@ unsigned int getInitLatencyThreshold(Session* session){
 
   // tempo levado para o tratar a mensagem >> tempo levado para propagar a mensagem
   
-  unsigned int inf = 0xFFFF;
-  inf = inf - 1;
-  return inf;
+  /* ~655 us at 100 kHz tick — Gustavo Scen6 session timeout scale */
+  return 65534u;
 
   // alternativamente: calcular em funcao do tamanho do caminho:
   //

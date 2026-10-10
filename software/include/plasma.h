@@ -103,8 +103,62 @@
 #define AP_STATUS             0x20000578
  
  
-//Kernel pending service FIFO 
+//Kernel pending service FIFO
 #define PENDING_SERVICE_INTR	0x20000400 
+
+// Tensor accelerator MMIO (fixed-latency stub)
+#define ACCEL_CTRL              0x20000420
+#define ACCEL_CYCLES            0x20000424
+#define ACCEL_STATUS            0x20000428
+#define ACCEL_IN_ADDR           0x20000430
+#define ACCEL_OUT_ADDR          0x20000434
+#define ACCEL_WEIGHT_ADDR       0x20000438
+#define ACCEL_DIMS              0x2000043C
+#define ACCEL_DBG_OP            0x20000440
+#define ACCEL_DBG_RUNS          0x20000444
+#define ACCEL_DBG_IN0           0x20000448
+#define ACCEL_DBG_W0            0x2000044C
+#define ACCEL_DBG_OUT0          0x20000450
+#define ACCEL_DBG_IN_SUM        0x20000454
+#define ACCEL_DBG_OUT_MAX       0x20000458
+#define ACCEL_DBG_STATUS        0x2000045C
+#define ACCEL_OPCODE            0x20000460
+#define ACCEL_DIMS1             0x20000464
+#define ACCEL_CTRL_FC_START     0x00000001
+#define ACCEL_CTRL_START        ACCEL_CTRL_FC_START
+#define ACCEL_CTRL_CLEAR_DONE   0x00000002
+#define ACCEL_DIMS_RELU_SHIFT   31
+#define ACCEL_DIMS_RELU_MASK    0x80000000u
+#define ACCEL_STATUS_BUSY       0x00000001
+#define ACCEL_STATUS_DONE       0x00000002
+
+/* Instruction opcodes (ACCEL_OPCODE) */
+#define ACCEL_OP_FC             0u
+#define ACCEL_OP_CONV2D         1u
+#define ACCEL_OP_AVGPOOL2X2     2u
+#define ACCEL_OP_RELU           3u
+
+#define ACCEL_DBG_OP_IDLE       0u
+#define ACCEL_DBG_OP_WR_IN      1u
+#define ACCEL_DBG_OP_WR_OUT     2u
+#define ACCEL_DBG_OP_WR_WEIGHT  3u
+#define ACCEL_DBG_OP_WR_DIMS    4u
+#define ACCEL_DBG_OP_WR_CTRL    5u
+#define ACCEL_DBG_OP_FC_START   6u
+#define ACCEL_DBG_OP_FC_CLEAR   7u
+#define ACCEL_DBG_OP_WR_OPCODE  8u
+#define ACCEL_DBG_OP_WR_DIMS1   9u
+#define ACCEL_DBG_OP_CONV_START 10u
+#define ACCEL_DBG_OP_POOL_START 11u
+#define ACCEL_DBG_OP_RELU_START 12u
+
+#define ACCEL_DBG_ERR_NONE      0u
+#define ACCEL_DBG_ERR_ZERO_DIM  1u
+#define ACCEL_DBG_ERR_BAD_IN    2u
+#define ACCEL_DBG_ERR_BAD_W     4u
+#define ACCEL_DBG_ERR_BAD_OUT   8u
+#define ACCEL_DBG_ERR_RAM_OOB   16u
+#define ACCEL_DBG_ERR_BAD_OP    32u
  
 #define SLACK_TIME_WINDOW		50000 // half milisecond 
  

@@ -4,6 +4,32 @@
 #include "packet.h"
 #include "seek.h"
 #include "probe_defines.h"
+#include "../include/mlp784_niles_config.h"
+
+/*
+ * GUSTAVO_FAITHFUL = 1 restores Gustavo's original probing behaviour
+ * (commit 1d28576) for the baseline arm: threshold 3, BSA for every path,
+ * no extra probe polling. 0 keeps the modified behaviour used by the
+ * NILES / hybrid arms. Set per arm by testcases/mlp784/set_niles_profile.py.
+ */
+#ifndef GUSTAVO_FAITHFUL
+#define GUSTAVO_FAITHFUL 0
+#endif
+
+/*
+ * GUSTAVO_1HOP_OSA = 1 sends 1-hop suspicious paths to OSA instead of BSA
+ * (BSA cannot split them: path_size/2 == 0). Off in the faithful arm, on in
+ * the gustavo_patched arm (faithful + only this fix) and the modified arms.
+ */
+/* GUSTAVO_DETECTION = 0 only in the niles_only arm: suspicious-path reports to
+ * the MPE (which start BSA/OSA probing) are suppressed. */
+#ifndef GUSTAVO_DETECTION
+#define GUSTAVO_DETECTION 1
+#endif
+
+#ifndef GUSTAVO_1HOP_OSA
+#define GUSTAVO_1HOP_OSA (!GUSTAVO_FAITHFUL)
+#endif
 
 #define probe_puts(argument) puts(argument)
 //#define probe_puts(argument)

@@ -573,9 +573,18 @@ void set_suspicious_health(struct suspicious_path *sus_path) {
 
     if (violated_intersections_threshold == 1) {
         probe_puts("[HT] Suspicious path threshold violation\n");
-        register_new_binary_search(sus_path);
+#if GUSTAVO_1HOP_OSA
+        /* 1-hop paths cannot be split by BSA (path_size/2 == 0); use OSA. */
+        if (sus_path->path_size <= 1) {
+            probe_puts("[HT] Single-hop path -> ordered search\n");
+            register_new_ordered_search(sus_path);
+        } else {
+            register_new_binary_search(sus_path);
+        }
+#else
+        register_new_binary_search(sus_path); /* Gustavo original */
+#endif
         print_noc_health_intersections();
-        // register_new_ordered_search(sus_path);
     }
 }
 

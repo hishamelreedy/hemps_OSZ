@@ -19,8 +19,16 @@ void init_probe_structures(unsigned int *mpe_addr_ptr) {
 }
 
 void report_suspicious_path_to_mpe(unsigned int target) {
-    
+
     unsigned char compressed_path[3];
+
+#if !GUSTAVO_DETECTION
+    /* niles_only arm: the platform session timeout/recovery stays active, but
+     * Gustavo's localization (MPE probing) must not be triggered. */
+    (void)target;
+    (void)compressed_path;
+    return;
+#endif
 
     int sr_path_index = SearchSourceRoutingDestination(target);
     if (sr_path_index != -1) { // is using source routing
@@ -1039,13 +1047,21 @@ void configure_new_outgoing_batch(struct outgoing_probe *out_probe) {
 
     outgoing_batches[slot].sent_probes = 0;
     outgoing_batches[slot].status = OUTGOING_BATCH_SENDING;
+#if !GUSTAVO_FAITHFUL
+    /* Do not wait for IRQ_TIMEOUT — after BH hang, timeout may never fire again. */
+    monitor_outgoing_batches();
+#endif
 }
 
 void monitor_outgoing_batches() {
     unsigned int time_now = MemoryRead(TICK_COUNTER);
     for(int i = 0; i < MAX_OUTGOING_BATCHES; i++) {
         if(outgoing_batches[i].status == OUTGOING_BATCH_SENDING && time_now >= outgoing_batches[i].next_probe_timestamp) {
-            probe_logs_puts("[HT] SEND PROBE MESSAGE -- probe #"); probe_logs_puts(itoa(outgoing_batches[i].initial_id + (outgoing_batches[i].sent_probes))); probe_logs_puts(" from batch #"); probe_logs_puts(itoa(outgoing_batches[i].initial_id));
+            probe_logs_puts("[HT] SEND PROBE MESSAGE -- probe #");
+            probe_logs_puts(itoa(outgoing_batches[i].initial_id + (outgoing_batches[i].sent_probes)));
+            probe_logs_puts(" from batch #");
+            probe_logs_puts(itoa(outgoing_batches[i].initial_id));
+            probe_logs_puts("\n");
             send_probe_from_outgoing_batch(&outgoing_batches[i]);
         }
     }
@@ -1073,8 +1089,10 @@ void update_outgoing_batch_timestamp(struct outgoing_batch *out_batch) {
 
     int probe_spacing_in_us, probe_spacing_in_cc;
 
-    probe_puts("[HT] Batch next timestamp upload. Batch #") probe_puts(itoa(out_batch->initial_id)); 
-    probe_puts(". Previous value: "); probe_puts(itoa(out_batch->next_probe_timestamp));
+    probe_puts("[HT] Batch next timestamp upload. Batch #");
+    probe_puts(itoa(out_batch->initial_id));
+    probe_puts(". Previous value: ");
+    probe_puts(itoa(out_batch->next_probe_timestamp));
 
     switch(out_batch->distribution) {
         case UNIFORM_DISTRIBUTION:

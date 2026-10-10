@@ -8,7 +8,7 @@
  * Research group: GAPH-PUCRS   -  contact:  fernando.moraes@pucrs.br 
  * 
  * \brief 
- * This module implements function relative to programming the DMNI to send and receibe a packet. 
+ * This module implements function relative to programming the DMNI to send and receive a packet. 
  * \detailed 
  * It is a abstraction from the NoC to the software components. 
  * This module is used by both manager and slave kernel 
